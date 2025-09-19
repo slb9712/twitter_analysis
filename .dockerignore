@@ -1,0 +1,32 @@
+# 忽略版本控制目录
+.git/
+
+# 忽略Python缓存目录
+__pycache__/
+*.py[cod]
+
+# 忽略虚拟环境目录
+venv/
+.env*
+
+# 忽略IDE配置文件
+.vscode/
+.idea/
+
+# 忽略日志文件
+*.log
+
+# 忽略本地配置文件
+local_settings.py
+
+# 忽略测试相关文件
+tests/
+
+# 忽略构建产物
+build/
+dist/
+*.egg-info/
+
+# 忽略Docker相关文件（避免递归）
+!Dockerfile
+!docker-compose.yml

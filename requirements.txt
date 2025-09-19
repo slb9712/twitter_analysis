@@ -1,0 +1,7 @@
+openai
+python-dotenv>=1.0.0
+pymysql==1.1.1
+pymongo>=4.8.0
+qdrant-client
+httpx
+apscheduler
