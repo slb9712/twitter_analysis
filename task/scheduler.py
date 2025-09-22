@@ -68,6 +68,7 @@ class DataProcessor:
             source_id TEXT COMMENT '推文原始id',
             token VARCHAR(255) COMMENT '涉及token',
             project VARCHAR(255) COMMENT '涉及项目',
+            tags TEXT COMMENT '项目相关tag',
             created_at INT NOT NULL COMMENT '创建时间'
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
         """
@@ -202,13 +203,16 @@ class DataProcessor:
             project_data = result.get('project', '')
             token_data = result.get('token', [])
 
+            proj_related_tags = []
+            if len(project_data) > 0:
+                proj_related_tags = self.mysql_manager.get_projects_tags(project_data)
             structured_data = {
                 'source_id': str(tweet_id),
                 'project': json.dumps(project_data),
                 'token': json.dumps(token_data),
                 'content': content,
+                'tags': json.dumps(proj_related_tags)
             }
-
             logger.info(f"保存处理后的 {tweet_id} 推文到数据库")
             self.mysql_manager.save_processed_kol_tweets(structured_data)
 

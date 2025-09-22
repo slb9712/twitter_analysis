@@ -9,7 +9,6 @@ from logging.handlers import TimedRotatingFileHandler
 
 from config.config import MYSQL_CONFIG, MONGO_CONFIG, OPENAI_CONFIG, TASK_CONFIG, DEEPSEEK_CONFIG, LOCAL_MODEL_CONFIG
 from task.scheduler import DataProcessor
-from tg_bot.bot import start_bot, stop_bot, broadcast_message
 
 log_dir = "logs"
 os.makedirs(log_dir, exist_ok=True)
@@ -77,7 +76,7 @@ def main():
 
             asyncio.run(process_once())
         else:
-            logger.info(f"启动定时任务，间隔时间: {TASK_CONFIG['interval_minutes']} 分钟")
+            logger.info(f"启动定时任务")
             processor.start()
 
             try:

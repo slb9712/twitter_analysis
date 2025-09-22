@@ -597,13 +597,14 @@ class MySQLManager:
         """
         try:
             query = """INSERT INTO structured_kol_tweets 
-                      ( source_id, project, token, content, created_at) 
-                      VALUES (%s, %s, %s, %s, %s)
+                      ( source_id, project, token, content, tags, created_at) 
+                      VALUES (%s, %s, %s, %s, %s, %s)
                       ON DUPLICATE KEY UPDATE 
                         source_id = VALUES(source_id),
                         project=VALUES(project),
                         token=VALUES(token),
                         content=VALUES(content),
+                        tags=VALUES(tags),
                         created_at=VALUES(created_at)"""
 
             params = (
@@ -611,12 +612,45 @@ class MySQLManager:
                 data['project'],
                 data['token'],
                 data['content'],
+                data['tags'],
                 int(time.time())
             )
             self.execute_update(query, params)
         except Exception as e:
             logger.info(data)
             logger.error(f"保存至数据库失败: {str(e)}")
+
+    def get_projects_tags(self, project_names):
+        """获取project相关tag
+
+        :return: list[dict]
+        """
+        try:
+            if not project_names:
+                return []
+
+            conditions = []
+            params = {}
+            for idx, pname in enumerate(project_names):
+                key = f"name{idx}"
+                conditions.append(f"LOWER(name) LIKE %({key})s")
+                params[key] = f"%{pname.lower()}%"
+
+            where_clause = " OR ".join(conditions)
+
+            query = f"""
+                    SELECT name, tag_text
+                    FROM projects_list
+                    WHERE {where_clause}
+                """
+
+
+            results = self.execute_query(query, params)
+            print(results)
+            return [{"name": row["name"], "tag": row["tag_text"].split('、')} for row in results]
+        except Exception as e:
+            logger.error(f"查询项目相关tag失败: {str(e)}")
+
 
 
 class MongoDBManager:
