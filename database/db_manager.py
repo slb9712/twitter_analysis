@@ -620,36 +620,103 @@ class MySQLManager:
             logger.info(data)
             logger.error(f"保存至数据库失败: {str(e)}")
 
-    def get_projects_tags(self, project_names):
-        """获取project相关tag
+    def get_projects_tags(self, project_names, token_names):
+        """整合去重project，token对应项目的tag
 
         :return: list[dict]
         """
         try:
-            if not project_names:
+            if not project_names and not token_names:
                 return []
-
-            conditions = []
             params = {}
-            for idx, pname in enumerate(project_names):
-                key = f"name{idx}"
-                conditions.append(f"LOWER(name) LIKE %({key})s")
-                params[key] = f"%{pname.lower()}%"
+            conditions = []
+
+            if project_names:
+                for idx, name in enumerate(project_names):
+                    key = f"p{idx}"
+                    conditions.append(f"project_name = %({key})s")
+                    params[key] = name
+
+            if token_names:
+                for idx, name in enumerate(token_names):
+                    key = f"t{idx}"
+                    conditions.append(f"token_name = %({key})s")
+                    params[key] = name
 
             where_clause = " OR ".join(conditions)
 
-            query = f"""
-                    SELECT name, tag_text
-                    FROM projects_list
+            project_query = f"""
+                    SELECT DISTINCT project_id, project_name, token_name
+                    FROM projects
                     WHERE {where_clause}
                 """
 
+            projects_result = self.execute_query(project_query, params)
 
-            results = self.execute_query(query, params)
-            print(results)
-            return [{"name": row["name"], "tag": row["tag_text"].split('、')} for row in results]
+            if not projects_result:
+                return []
+
+            project_ids = [row["project_id"] for row in projects_result]
+
+            tags_params = {f"id{i}": pid for i, pid in enumerate(project_ids)}
+            tags_conditions = " OR ".join([f"project_id = %({k})s" for k in tags_params])
+            tags_query = f"""
+                    SELECT project_id, text
+                    FROM projects_tags
+                    WHERE {tags_conditions}
+                """
+
+            tags_result = self.execute_query(tags_query, tags_params)
+
+            tags_map = {}
+            for row in tags_result:
+                pid = row["project_id"]
+                tags_map.setdefault(pid, []).append(row["text"])
+
+            final_result = []
+            for row in projects_result:
+                pid = row["project_id"]
+                final_result.append({
+                    "project_name": row["project_name"],
+                    "token_name": row["token_name"],
+                    "tags": tags_map.get(pid, [])
+                })
+
+            return final_result
         except Exception as e:
             logger.error(f"查询项目相关tag失败: {str(e)}")
+
+    def get_target_kol_tweets(self, start_ts, end_ts):
+        try:
+
+            sql = """SELECT * FROM kol_tweets WHERE tweet_date >= %s AND tweet_date <= %s"""
+            result = self.execute_query(sql, (start_ts, end_ts))
+            return result
+        except Exception as e:
+            logger.error(f"查询指定推文失败：: {str(e)}")
+
+    def save_kol_summary_tweets(self, data):
+
+        try:
+            query = """INSERT INTO kol_tweets_summary 
+                                  ( source_ids, projects, events, created_at) 
+                                  VALUES (%s, %s, %s, %s)
+                                  ON DUPLICATE KEY UPDATE 
+                                    source_ids = VALUES(source_ids),
+                                    projects=VALUES(projects),
+                                    events=VALUES(events),
+                                    created_at=VALUES(created_at)"""
+
+            params = (
+                data['source_ids'],
+                data['projects'],
+                data['events'],
+                int(time.time())
+            )
+            self.execute_update(query, params)
+        except Exception as e:
+            logger.info(data)
+            logger.error(f"保存至数据库失败: {str(e)}")
 
 
 

@@ -14,7 +14,7 @@ from model.text_analyzer import TextAnalyzer
 from utils.format_msg import replace_newlines_with_space
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
-from datetime import datetime,  UTC
+from datetime import datetime, UTC, timedelta
 
 logger = logging.getLogger('scheduler')
 logging.getLogger("apscheduler.executors.default").setLevel(logging.ERROR)
@@ -73,8 +73,19 @@ class DataProcessor:
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
         """
 
+        create_kol_tweets_summary_sql = """
+                    CREATE TABLE IF NOT EXISTS kol_tweets_summary (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    events TEXT COMMENT '总结事件',
+                    projects TEXT COMMENT '涉及项目',
+                    source_ids TEXT COMMENT '数据源',
+                    created_at INT NOT NULL COMMENT '创建时间'
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+                """
+
         try:
             self.mysql_manager.execute_update(create_kol_tweets_table_sql)
+            self.mysql_manager.execute_update(create_kol_tweets_summary_sql)
             logger.info("已确保必要的表存在")
         except Exception as e:
             logger.error(f"创建表失败: {str(e)}")
@@ -106,6 +117,14 @@ class DataProcessor:
             next_run_time=datetime.now(),
             max_instance=1,
             name="实时处理 KOL 推文"
+        )
+
+        self.scheduler.add_job(
+            func=self._process_summary_tweets,
+            trigger="cron",
+            minute=0,
+            max_instances=1,
+            name="定时处理总结推文"
         )
 
         # self.scheduler.add_job(
@@ -205,7 +224,7 @@ class DataProcessor:
 
             proj_related_tags = []
             if len(project_data) > 0:
-                proj_related_tags = self.mysql_manager.get_projects_tags(project_data)
+                proj_related_tags = self.mysql_manager.get_projects_tags(project_data, token_data)
             structured_data = {
                 'source_id': str(tweet_id),
                 'project': json.dumps(project_data),
@@ -216,6 +235,37 @@ class DataProcessor:
             logger.info(f"保存处理后的 {tweet_id} 推文到数据库")
             self.mysql_manager.save_processed_kol_tweets(structured_data)
 
+    def _format_tweets(self, tweets):
+        lines = []
+        for idx, t in enumerate(tweets, start=1):
+            text = t.get("text", "").strip()
+            if text:
+                # 连续空行去掉，替换成单个空格
+                clean_text = " ".join(text.split())
+                lines.append(f"Tweet {idx}: {clean_text}")
+        return "\n\n".join(lines)
+
+    async def _process_summary_tweets(self):
+        sh_tz = ZoneInfo("Asia/Shanghai")
+        now = datetime.now(sh_tz)
+        end = now.replace(minute=0, second=0, microsecond=0)
+        end_ts = int(end.timestamp())
+        start_ts = int((end - timedelta(hours=1)).timestamp())
+        all_tweets = self.mysql_manager.get_target_kol_tweets(start_ts, end_ts)
+
+        formated_tweets = self._format_tweets(all_tweets)
+        result = await self.text_analyzer.analyze_text(
+            tweet_summary_template,
+            all_tweets=formated_tweets
+        )
+
+        structured_data = {
+            "events": json.dumps(result.get("events", [])),
+            "projects": json.dumps(result.get("projects", [])),
+            "source_ids": json.dumps([t.get("twitter_id") for t in all_tweets if t.get("twitter_id")])
+        }
+        logger.info(structured_data)
+        self.mysql_manager.save_kol_summary_tweets(structured_data)
 
 
 

@@ -71,7 +71,7 @@ def main():
             async def process_once():
                 # processor._cluster_news()
                 
-                await processor._process_kol_tweets()
+                await processor._process_summary_tweets()
                 logger.info("单次数据处理完成")
 
             asyncio.run(process_once())
