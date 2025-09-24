@@ -686,10 +686,81 @@ class MySQLManager:
         except Exception as e:
             logger.error(f"查询项目相关tag失败: {str(e)}")
 
+    def get_projects_tokens_tags(self, project_token_names):
+        """整合去重project与token（不区分名称类型），获取对应项目的tag
+
+        :param project_token_names: 不区分project名称和token名称的合并列表
+        :return: list[dict]
+        """
+        try:
+            # 若输入列表为空，直接返回空结果
+            if not project_token_names:
+                return []
+
+            params = {}
+            conditions = []
+
+            for idx, name in enumerate(project_token_names):
+                key = f"name{idx}"
+                conditions.append(f"(project_name = %({key})s OR token_name = %({key})s)")
+                params[key] = name
+
+            where_clause = " OR ".join(conditions)
+
+            project_query = f"""
+                    SELECT DISTINCT project_id, project_name, token_name
+                    FROM projects
+                    WHERE {where_clause}
+                """
+
+            projects_result = self.execute_query(project_query, params)
+
+            if not projects_result:
+                return []
+
+            project_ids = [row["project_id"] for row in projects_result]
+
+            tags_params = {f"id{i}": pid for i, pid in enumerate(project_ids)}
+            tags_conditions = " OR ".join([f"project_id = %({k})s" for k in tags_params])
+            tags_query = f"""
+                    SELECT project_id, text
+                    FROM projects_tags
+                    WHERE {tags_conditions}
+                """
+
+            tags_result = self.execute_query(tags_query, tags_params)
+
+            tags_map = {}
+            for row in tags_result:
+                pid = row["project_id"]
+                tags_map.setdefault(pid, []).append(row["text"])
+
+            final_result = []
+            for row in projects_result:
+                pid = row["project_id"]
+                final_result.append({
+                    "project_name": row["project_name"],
+                    "token_name": row["token_name"],
+                    "tags": tags_map.get(pid, [])
+                })
+
+            return final_result
+        except Exception as e:
+            logger.error(f"查询项目相关tag失败: {str(e)}")
+
     def get_target_kol_tweets(self, start_ts, end_ts):
         try:
 
             sql = """SELECT * FROM kol_tweets WHERE tweet_date >= %s AND tweet_date <= %s"""
+            result = self.execute_query(sql, (start_ts, end_ts))
+            return result
+        except Exception as e:
+            logger.error(f"查询指定推文失败：: {str(e)}")
+
+    def get_target_structured_tweets(self, start_ts, end_ts):
+        try:
+
+            sql = """SELECT tags FROM structured_kol_tweets WHERE created_at >= %s AND created_at <= %s"""
             result = self.execute_query(sql, (start_ts, end_ts))
             return result
         except Exception as e:

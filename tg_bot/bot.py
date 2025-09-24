@@ -34,6 +34,7 @@ class TelegramBot:
         self.group_ids: Set[str] = set()  # 使用集合存储群组ID，避免重复
         self.group_ids.add("-4892377641")
         self.is_running = False
+        self.loop = None
         self.mysql_manager = MySQLManager(MYSQL_CONFIG)
         self.mongo_manager = MongoDBManager(MONGO_CONFIG)
         self.temp_data = None
@@ -292,45 +293,45 @@ class TelegramBot:
         )
 
 # 创建全局单例实例
-tg_bot = TelegramBot()
-
-
-
-# 对外提供的简便函数
-async def send_message(text: str, chat_id: str) -> bool:
-    """向指定群组发送消息"""
-    return await tg_bot.send_message_to_group(chat_id, text)
-
-async def broadcast_message(text: str) -> dict:
-    """向所有群组广播消息"""
-    return await tg_bot.broadcast_message(text)
-
-def start_bot():
-    tg_bot.start()
-
-def stop_bot():
-    tg_bot.stop()
-
-def get_group_ids() -> List[str]:
-    return tg_bot.get_group_ids()
-
-
-# 测试
-async def main():
-    print('1')
-    start_bot()
-    # 自己群 -4878412167
-    try:
-        while True:
-            await asyncio.sleep(3600)
-    except Exception as e:
-        print("main loop error:", e)
-if __name__ == '__main__':
-    asyncio.run(main())
-    # start_bot()
-    # try:
-    #     while True:
-    #         asyncio.sleep(1)
-    # except KeyboardInterrupt:
-    #     print("正在停止TG_bot...")
-    #     stop_bot()
+# tg_bot = TelegramBot()
+#
+#
+#
+# # 对外提供的简便函数
+# async def send_message(text: str, chat_id: str) -> bool:
+#     """向指定群组发送消息"""
+#     return await tg_bot.send_message_to_group(chat_id, text)
+#
+# async def broadcast_message(text: str) -> dict:
+#     """向所有群组广播消息"""
+#     return await tg_bot.broadcast_message(text)
+#
+# def start_bot():
+#     tg_bot.start()
+#
+# def stop_bot():
+#     tg_bot.stop()
+#
+# def get_group_ids() -> List[str]:
+#     return tg_bot.get_group_ids()
+#
+#
+# # 测试
+# async def main():
+#     print('1')
+#     start_bot()
+#     # 自己群 -4878412167
+#     try:
+#         while True:
+#             await asyncio.sleep(3600)
+#     except Exception as e:
+#         print("main loop error:", e)
+# if __name__ == '__main__':
+#     asyncio.run(main())
+#     # start_bot()
+#     # try:
+#     #     while True:
+#     #         asyncio.sleep(1)
+#     # except KeyboardInterrupt:
+#     #     print("正在停止TG_bot...")
+#     #     stop_bot()

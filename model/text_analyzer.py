@@ -49,6 +49,7 @@ class TextAnalyzer:
                 logger.info(prompt)
                 return await self._analyze_with_ollama(prompt)
             else:
+                logger.info(prompt)
                 return await self._analyze_with_openai(prompt)
 
         except Exception as e:

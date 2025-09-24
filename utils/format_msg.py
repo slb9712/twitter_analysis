@@ -360,3 +360,50 @@ def format_all_projects(all_info):
         project_text = format_project_info(project)
         all_texts.append(project_text)
     return "\n" + ("\n\n" + "-" * 24 + "\n\n").join(all_texts)
+
+
+def format_for_telegram(data_list):
+    """
+    将统计数据格式化为Telegram支持的HTML消息格式
+    仅使用<b>标签和unicode符号，保持美观易读
+
+    :param data_list: 包含name、tag、count的字典列表
+    :return: 格式化后的HTML字符串
+    """
+    if not data_list:
+        return "📊 暂无数据"
+
+    # 消息标题
+    message_parts = ["📋 <b>项目统计结果</b>\n\n"]
+
+    # 按count降序排序（确保顺序正确）
+    sorted_data = sorted(data_list, key=lambda x: (-x['count'], x['name']))
+
+    for idx, item in enumerate(sorted_data, 1):
+        # 转义特殊字符，避免HTML解析错误
+        name = html.escape(item['name'])
+        count = item['count']
+        tags = [html.escape(tag) for tag in item['tag']]
+
+        # 构建行内容：序号 + 名称 + 计数 + 标签
+        # 使用不同unicode符号区分不同计数级别
+        if count >= 5:
+            count_symbol = "🔥"  # 高频率
+        elif count >= 3:
+            count_symbol = "✨"  # 中频率
+        else:
+            count_symbol = "🔹"  # 低频率
+
+        # 标签部分用逗号分隔，前后加括号
+        tags_str = "(" + ", ".join(tags) + ")"
+
+        # 拼接行（加粗名称，计数带符号）
+        line = f"{idx}. <b>{name}</b> {count_symbol} {count} {tags_str}"
+        message_parts.append(line)
+
+    # 结尾添加分隔线和说明
+    message_parts.append("\n" + "=" * 20)
+    message_parts.append("\n💡 统计结果按出现次数排序")
+
+    # 合并所有部分
+    return "\n".join(message_parts)

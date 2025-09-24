@@ -9,6 +9,7 @@ from logging.handlers import TimedRotatingFileHandler
 
 from config.config import MYSQL_CONFIG, MONGO_CONFIG, OPENAI_CONFIG, TASK_CONFIG, DEEPSEEK_CONFIG, LOCAL_MODEL_CONFIG
 from task.scheduler import DataProcessor
+from tg_bot.bot import TelegramBot
 
 log_dir = "logs"
 os.makedirs(log_dir, exist_ok=True)
@@ -23,9 +24,9 @@ logging.basicConfig(
         logging.StreamHandler(),
         TimedRotatingFileHandler(
             filename=log_file,
-            when="midnight",       # 每天午夜轮换
+            when="midnight",
             interval=1,
-            backupCount=30,        # 最多保留 30 个文件
+            backupCount=30,
             encoding="utf-8",
             utc=True
         )

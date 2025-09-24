@@ -11,7 +11,8 @@ import httpx
 from prompt import *
 from database.db_manager import MySQLManager, MongoDBManager
 from model.text_analyzer import TextAnalyzer
-from utils.format_msg import replace_newlines_with_space
+from tg_bot.bot import TelegramBot
+from utils.format_msg import replace_newlines_with_space, format_for_telegram
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from datetime import datetime, UTC, timedelta
@@ -37,6 +38,7 @@ class DataProcessor:
         self.mysql_manager = MySQLManager(mysql_config)
         self.mongo_manager = MongoDBManager(mongo_config)
         self.text_analyzer = TextAnalyzer(openai_config)
+        self.bot =TelegramBot()
         self.task_config = task_config
         self.running = False
         self.thread = None
@@ -55,6 +57,7 @@ class DataProcessor:
         # self.embedder = EmbeddingService()
 
         # 确保必要的表存在
+        self.bot.start()
         self._ensure_tables_exist()
 
         logger.info("数据处理器初始化完成")
@@ -127,6 +130,15 @@ class DataProcessor:
             name="定时处理总结推文"
         )
 
+        self.scheduler.add_job(
+            timezone='Asia/Shanghai',
+            func=self._send_projects_trends,
+            trigger='cron',
+            hour=0,
+            minute=0,
+            max_instances=1,
+            name="定时发送项目热度"
+        )
         # self.scheduler.add_job(
         #     self._process_daily_tasks,
         #     trigger=CronTrigger(hour=0, minute=1),
@@ -239,10 +251,10 @@ class DataProcessor:
         lines = []
         for idx, t in enumerate(tweets, start=1):
             text = t.get("text", "").strip()
+            author_uid = t.get("uid", "未知博主")
             if text:
-                # 连续空行去掉，替换成单个空格
                 clean_text = " ".join(text.split())
-                lines.append(f"Tweet {idx}: {clean_text}")
+                lines.append(f"Tweet {idx} (博主: {author_uid}): {clean_text}")
         return "\n\n".join(lines)
 
     async def _process_summary_tweets(self):
@@ -254,19 +266,118 @@ class DataProcessor:
         all_tweets = self.mysql_manager.get_target_kol_tweets(start_ts, end_ts)
 
         formated_tweets = self._format_tweets(all_tweets)
+        logger.info(formated_tweets)
         result = await self.text_analyzer.analyze_text(
             tweet_summary_template,
             all_tweets=formated_tweets
         )
-
+        events = result.get("events", [])
+        all_projects = []
+        for idx, e in enumerate(events):
+            extracted_projects = [item.strip('$') for item in e.get("projects", [])]
+            project_token_tags = self.mysql_manager.get_projects_tokens_tags(extracted_projects)
+            all_projects.extend(project_token_tags)
+            events[idx]['projects'] = project_token_tags
         structured_data = {
-            "events": json.dumps(result.get("events", [])),
-            "projects": json.dumps(result.get("projects", [])),
-            "source_ids": json.dumps([t.get("twitter_id") for t in all_tweets if t.get("twitter_id")])
+            "events": json.dumps(events, ensure_ascii=False),
+            "projects": json.dumps(all_projects, ensure_ascii=False),
+            "source_ids": json.dumps([t.get("twitter_id") for t in all_tweets if t.get("twitter_id")],
+                                     ensure_ascii=False)
         }
         logger.info(structured_data)
         self.mysql_manager.save_kol_summary_tweets(structured_data)
 
+    async def _once_process_summary_tweets(self):
+        sh_tz = ZoneInfo("Asia/Shanghai")
+        now = datetime.now(sh_tz)
 
+        yesterday_start = (now - timedelta(days=1)).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
+        yesterday_end = now.replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
 
+        current_period_end = yesterday_start
+        while current_period_end < yesterday_end:
+            current_period_start = current_period_end
+            current_period_end = current_period_start + timedelta(hours=1)
 
+            start_ts = int(current_period_start.timestamp())
+            end_ts = int(current_period_end.timestamp())
+
+            all_tweets = self.mysql_manager.get_target_kol_tweets(start_ts, end_ts)
+
+            formated_tweets = self._format_tweets(all_tweets)
+            logger.info(formated_tweets)
+            result = await self.text_analyzer.analyze_text(
+                tweet_summary_template,
+                all_tweets=formated_tweets
+            )
+            events = result.get("events", [])
+            all_projects = []
+            for idx, e in enumerate(events):
+
+                extracted_projects = [item.strip('$') for item in e.get("projects", [])]
+                project_token_tags = self.mysql_manager.get_projects_tokens_tags(extracted_projects)
+                all_projects.extend(project_token_tags)
+                events[idx]['projects'] = project_token_tags
+            structured_data = {
+                "events": json.dumps(events, ensure_ascii=False),
+                "projects": json.dumps(all_projects, ensure_ascii=False),
+                "source_ids": json.dumps([t.get("twitter_id") for t in all_tweets if t.get("twitter_id")],
+                                         ensure_ascii=False)
+            }
+            logger.info(structured_data)
+            self.mysql_manager.save_kol_summary_tweets(structured_data)
+
+    async def _send_projects_trends(self):
+        """
+        获取昨日所有twitter的tags字段，统计提到的项目排序
+        """
+        sh_tz = ZoneInfo("Asia/Shanghai")
+        now = datetime.now(sh_tz)
+
+        start_ts = int((now - timedelta(days=1)).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        ).timestamp())
+        end_ts = int(now.replace(
+            hour=0, minute=0, second=0, microsecond=0
+        ).timestamp())
+        all_tweets_tags = self.mysql_manager.get_target_structured_tweets(start_ts, end_ts)
+        name_stats = {}
+        for item in all_tweets_tags:
+            try:
+                tags = json.loads(item.get('tags', '[]'))
+            except json.JSONDecodeError:
+                continue
+
+            for tag_item in tags:
+                name = tag_item.get('name')
+                tag_list = tag_item.get('tag', [])
+
+                if not name:
+                    continue
+
+                if name not in name_stats:
+                    unique_tags = list(set(tag_list))
+                    name_stats[name] = {
+                        'tag': unique_tags,
+                        'count': 1
+                    }
+                else:
+                    name_stats[name]['count'] += 1
+                    merged_tags = list(set(name_stats[name]['tag'] + tag_list))
+                    name_stats[name]['tag'] = merged_tags
+
+        result = [
+            {
+                'name': name,
+                'tag': stats['tag'],
+                'count': stats['count']
+            }
+            for name, stats in name_stats.items()
+        ]
+        result.sort(key=lambda x: (-x['count'], x['name']))
+        format_msg = format_for_telegram(result)
+        await self.bot.send_message_to_group(self.test_inner_group, format_msg)
