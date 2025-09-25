@@ -40,6 +40,7 @@ class DataProcessor:
         self.thread = None
         self.is_first_run = True
         self.concurrency = 5
+        self.loop = None
         self.limit_count = self.task_config['process_limit_count']
         self.latest_kol_tweets_time = int(datetime.now(ZoneInfo("Asia/Shanghai")).timestamp())
         self.updated_projects_list = set()
@@ -47,7 +48,7 @@ class DataProcessor:
         self.outer_group = '-4892377641'
         self.daily_group = '-4980813719'
         self.daily_hyper_group = '-4942034777'
-        self.test_inner_group = '-4878412167'
+        self.test_inner_group = '-4834242214'
         self.test_outer_group = '-4878412167'
         # self.qdrant_client = QdrantService()
         # self.embedder = EmbeddingService()
@@ -93,17 +94,17 @@ class DataProcessor:
         """在当前 loop 中启动 bot"""
         await self.bot.start()
 
-    def start(self):
+    async def start(self):
         """启动调度器并注册任务"""
         if self.running:
             logger.warning("数据处理器已经在运行中")
             return
 
         self.running = True
-        self.loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(self.loop)
+        self.loop = asyncio.get_running_loop()
+        # asyncio.set_event_loop(self.loop)
 
-        self.loop.call_soon_threadsafe(asyncio.create_task, self.start_bot_async())
+        await self.start_bot_async()
         self.scheduler = AsyncIOScheduler(event_loop=self.loop)
 
         # self.scheduler.add_job(
@@ -145,7 +146,7 @@ class DataProcessor:
         logger.info("调度器已启动")
 
         try:
-            self.loop.run_forever()
+            await asyncio.Event().wait()
         except (KeyboardInterrupt, SystemExit):
             logger.info("调度器停止")
         finally:

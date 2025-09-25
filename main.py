@@ -7,7 +7,7 @@ import asyncio
 from dotenv import load_dotenv
 from logging.handlers import TimedRotatingFileHandler
 
-from config.config import MYSQL_CONFIG, MONGO_CONFIG, OPENAI_CONFIG, TASK_CONFIG, DEEPSEEK_CONFIG, LOCAL_MODEL_CONFIG
+from config.config import MYSQL_CONFIG, MONGO_CONFIG, OPENAI_CONFIG, TASK_CONFIG, DEEPSEEK_CONFIG
 from task.scheduler import DataProcessor
 
 log_dir = "logs"
@@ -68,7 +68,7 @@ async def main_async(args):
             await processor.stop()  # 完成后停止
         else:
             logger.info(f"启动定时任务")
-            processor.start()
+            await processor.start()
 
     except Exception as e:
         logger.error(f"程序运行出错: {str(e)}")
@@ -79,10 +79,7 @@ def main():
     parser.add_argument('--once', action='store_true', help='只运行一次，不启动定时任务')
     args = parser.parse_args()
 
-    if args.once:
-        asyncio.run(main_async(args))
-    else:
-        main_async(args)
+    asyncio.run(main_async(args))
 
 if __name__ == '__main__':
     main()
