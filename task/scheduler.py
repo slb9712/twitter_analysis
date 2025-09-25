@@ -1,21 +1,17 @@
 import json
-import time
 import logging
-import threading
 import asyncio
 from zoneinfo import ZoneInfo
 
-from bson import ObjectId
-import httpx
 
 from prompt import *
 from database.db_manager import MySQLManager, MongoDBManager
 from model.text_analyzer import TextAnalyzer
-from tg_bot.bot import TelegramBot
-from utils.format_msg import replace_newlines_with_space, format_for_telegram
+from tg_bot.bot import send_message, tg_bot
+from utils.format_msg import replace_newlines_with_space, format_kol_day_count, format_kol_hour_message
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
-from datetime import datetime, UTC, timedelta
+from datetime import datetime, timedelta
 
 logger = logging.getLogger('scheduler')
 logging.getLogger("apscheduler.executors.default").setLevel(logging.ERROR)
@@ -38,7 +34,7 @@ class DataProcessor:
         self.mysql_manager = MySQLManager(mysql_config)
         self.mongo_manager = MongoDBManager(mongo_config)
         self.text_analyzer = TextAnalyzer(openai_config)
-        self.bot =TelegramBot()
+        self.bot = tg_bot
         self.task_config = task_config
         self.running = False
         self.thread = None
@@ -57,7 +53,6 @@ class DataProcessor:
         # self.embedder = EmbeddingService()
 
         # 确保必要的表存在
-        self.bot.start()
         self._ensure_tables_exist()
 
         logger.info("数据处理器初始化完成")
@@ -94,6 +89,10 @@ class DataProcessor:
             logger.error(f"创建表失败: {str(e)}")
             raise
 
+    async def start_bot_async(self):
+        """在当前 loop 中启动 bot"""
+        await self.bot.start()
+
     def start(self):
         """启动调度器并注册任务"""
         if self.running:
@@ -104,6 +103,7 @@ class DataProcessor:
         self.loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self.loop)
 
+        self.loop.call_soon_threadsafe(asyncio.create_task, self.start_bot_async())
         self.scheduler = AsyncIOScheduler(event_loop=self.loop)
 
         # self.scheduler.add_job(
@@ -139,28 +139,6 @@ class DataProcessor:
             max_instances=1,
             name="定时发送项目热度"
         )
-        # self.scheduler.add_job(
-        #     self._process_daily_tasks,
-        #     trigger=CronTrigger(hour=0, minute=1),
-        #     # next_run_time=datetime.now(),
-        #     misfire_grace_time=60,
-        #     name="每日定时总结任务"
-        # )
-
-        # self.scheduler.add_job(
-        #     self._process_send_daily_msg,
-        #     trigger=CronTrigger(hour=1, minute=0),
-        #     misfire_grace_time=60,
-        #     # next_run_time=datetime.now(),
-        #     name="每日定时发送日报"
-        # )
-
-        # self.scheduler.add_job(
-        #     self._clear_updated_set,
-        #     trigger=CronTrigger(hour=23, minute=55),
-        #     misfire_grace_time=60,
-        #     name="每日重置更新项目信息"
-        # )
 
 
         self.scheduler.start()
@@ -173,30 +151,9 @@ class DataProcessor:
         finally:
             self.scheduler.shutdown()
 
-    async def _process_all_sources(self):
-        """间隔时间执行的任务"""
-        start_time = time.time()
-        logger.info("开始定时处理数据源")
-
-        tasks = []
-
-        # for source in self.task_config['mysql_sources']:
-        #     tasks.append(self._process_mysql_source(source))
-        #
-        # for source in self.task_config['mongo_sources']:
-        #     tasks.append(self._process_mongo_source(source))
-
-        await asyncio.gather(*tasks)
-
-        if self.is_first_run:
-            self.is_first_run = False
-            logger.info("首次运行完成，之后将只处理新数据")
-
-        elapsed = time.time() - start_time
-        logger.info(f"定时处理完成，耗时 {elapsed:.2f} 秒")
-
-    def stop(self):
+    async def stop(self):
         """停止数据处理"""
+        await self.bot.stop()
         if not self.running:
             logger.warning("数据处理器未在运行")
             return
@@ -264,7 +221,8 @@ class DataProcessor:
         end_ts = int(end.timestamp())
         start_ts = int((end - timedelta(hours=1)).timestamp())
         all_tweets = self.mysql_manager.get_target_kol_tweets(start_ts, end_ts)
-
+        if len(all_tweets) == 0:
+            logger.warning("No tweets found during the past 1 hour")
         formated_tweets = self._format_tweets(all_tweets)
         logger.info(formated_tweets)
         result = await self.text_analyzer.analyze_text(
@@ -284,8 +242,11 @@ class DataProcessor:
             "source_ids": json.dumps([t.get("twitter_id") for t in all_tweets if t.get("twitter_id")],
                                      ensure_ascii=False)
         }
-        logger.info(structured_data)
         self.mysql_manager.save_kol_summary_tweets(structured_data)
+        format_msg = format_kol_hour_message(events)
+        success = await send_message(self.test_inner_group, format_msg)
+        if not success:
+            logger.error("发送项目热度消息失败")
 
     async def _once_process_summary_tweets(self):
         sh_tz = ZoneInfo("Asia/Shanghai")
@@ -345,6 +306,7 @@ class DataProcessor:
             hour=0, minute=0, second=0, microsecond=0
         ).timestamp())
         all_tweets_tags = self.mysql_manager.get_target_structured_tweets(start_ts, end_ts)
+        logger.info(all_tweets_tags)
         name_stats = {}
         for item in all_tweets_tags:
             try:
@@ -353,8 +315,8 @@ class DataProcessor:
                 continue
 
             for tag_item in tags:
-                name = tag_item.get('name')
-                tag_list = tag_item.get('tag', [])
+                name = tag_item.get('project_name')
+                tag_list = tag_item.get('tags', [])
 
                 if not name:
                     continue
@@ -378,6 +340,13 @@ class DataProcessor:
             }
             for name, stats in name_stats.items()
         ]
+        logger.info(result)
         result.sort(key=lambda x: (-x['count'], x['name']))
-        format_msg = format_for_telegram(result)
-        await self.bot.send_message_to_group(self.test_inner_group, format_msg)
+
+        if len(result) == 0:
+            logger.warning("No tweets data")
+            return
+        format_msg = format_kol_day_count(result)
+        success = await send_message(self.test_inner_group, format_msg)
+        if not success:
+            logger.error("发送项目热度消息失败")

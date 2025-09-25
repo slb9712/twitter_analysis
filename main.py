@@ -9,7 +9,6 @@ from logging.handlers import TimedRotatingFileHandler
 
 from config.config import MYSQL_CONFIG, MONGO_CONFIG, OPENAI_CONFIG, TASK_CONFIG, DEEPSEEK_CONFIG, LOCAL_MODEL_CONFIG
 from task.scheduler import DataProcessor
-from tg_bot.bot import TelegramBot
 
 log_dir = "logs"
 os.makedirs(log_dir, exist_ok=True)
@@ -50,14 +49,9 @@ def check_environment():
     return True
 
 
-def main():
-    parser = argparse.ArgumentParser(description='Analysis Bot')
-    parser.add_argument('--once', action='store_true', help='只运行一次，不启动定时任务')
-    args = parser.parse_args()
-
+async def main_async(args):
     if not check_environment():
         return
-
     try:
         processor = DataProcessor(
             mysql_config=MYSQL_CONFIG,
@@ -66,33 +60,29 @@ def main():
             task_config=TASK_CONFIG
         )
 
-
         if args.once:
             logger.info("执行单次数据处理...")
-            async def process_once():
-                # processor._cluster_news()
-                
-                await processor._process_summary_tweets()
-                logger.info("单次数据处理完成")
-
-            asyncio.run(process_once())
+            await processor.start_bot_async()  # 先启动 bot（用于发送）
+            await processor._process_summary_tweets()
+            logger.info("单次数据处理完成")
+            await processor.stop()  # 完成后停止
         else:
             logger.info(f"启动定时任务")
             processor.start()
 
-            try:
-                while True:
-                    time.sleep(1)
-            except KeyboardInterrupt:
-                logger.info("接收到终止信号，正在停止...")
-                processor.stop()
-                # logger.info("正在停止TG_bot...")
-                # stop_bot()
-                # logger.info("TG_bot已停止")
-
     except Exception as e:
         logger.error(f"程序运行出错: {str(e)}")
 
+
+def main():
+    parser = argparse.ArgumentParser(description='Analysis Bot')
+    parser.add_argument('--once', action='store_true', help='只运行一次，不启动定时任务')
+    args = parser.parse_args()
+
+    if args.once:
+        asyncio.run(main_async(args))
+    else:
+        main_async(args)
 
 if __name__ == '__main__':
     main()

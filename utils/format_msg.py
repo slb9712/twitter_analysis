@@ -2,9 +2,11 @@ import html
 import logging
 import re
 import json
+from collections import defaultdict
 from datetime import datetime
 
 logger = logging.getLogger('scheduler')
+
 
 def replace_newlines_with_space(text: str) -> str:
     return text.replace('\n', ' ').replace('\r', ' ')
@@ -27,6 +29,7 @@ def center_line(text: str, total_width: int = 50) -> str:
     right = line_char * (line_len - len(left))
     return f"<code>{left} <b>{text}</b> {right}</code>"
 
+
 def format_change(value, is_percentage=False):
     if value >= 0:
         formatted_value = f"+{round(value, 2)}" if not is_percentage else f"+{round(value, 2)}%"
@@ -37,16 +40,21 @@ def format_change(value, is_percentage=False):
 
     return f"{formatted_value} {arrow}".strip()
 
+
 def format_stocks_msg(sp_last_close, sp500_change_value, sp500_change_percentage,
                       nasdaq_last_close, nasdaq_change_value, nasdaq_change_percentage,
                       dow_jones_last_close, dow_jones_change_value, dow_jones_change_percentage) -> str:
     """格式化美国股市指数的消息"""
     message_parts = []
     message_parts.append("★每日新闻★")
-    message_parts.append(f"S&P 500 收盘: {sp_last_close}, 相较前日: {format_change(sp500_change_value)}, ({format_change(sp500_change_percentage, True)})")
-    message_parts.append(f"纳斯达克 收盘: {nasdaq_last_close}, 相较前日: {format_change(nasdaq_change_value)}, ({format_change(nasdaq_change_percentage, True)})")
-    message_parts.append(f"道琼斯 收盘: {dow_jones_last_close}, 相较前日: {format_change(dow_jones_change_value)}, ({format_change(dow_jones_change_percentage, True)})")
+    message_parts.append(
+        f"S&P 500 收盘: {sp_last_close}, 相较前日: {format_change(sp500_change_value)}, ({format_change(sp500_change_percentage, True)})")
+    message_parts.append(
+        f"纳斯达克 收盘: {nasdaq_last_close}, 相较前日: {format_change(nasdaq_change_value)}, ({format_change(nasdaq_change_percentage, True)})")
+    message_parts.append(
+        f"道琼斯 收盘: {dow_jones_last_close}, 相较前日: {format_change(dow_jones_change_value)}, ({format_change(dow_jones_change_percentage, True)})")
     return "\n".join(message_parts).strip() + '\n\n'
+
 
 def format_hyper_news_message(data: list, nums: int) -> str:
     """单独格式化Hyper的news和tweets"""
@@ -71,9 +79,10 @@ def format_hyper_news_message(data: list, nums: int) -> str:
             message_parts.append(f"<b>项目 X 消息</b>")
             for t in tweets_data:
                 message_parts.append(f"  ↳{t}")
-        message_parts.append("") 
+        message_parts.append("")
 
     return "\n".join(message_parts).strip()
+
 
 def format_top_projects_news_message(top_projects: list, nums: int) -> str:
     """
@@ -339,7 +348,6 @@ def format_project_info(project):
         if portfolio is not None:
             lines.append(f"📊 <b>Portfolio Size:</b> {escape_html(str(portfolio))}")
 
-
         investments = project.get("investor_investments", [])
         if investments:
             lines.append("📈 <b>Recent Investments:</b>")
@@ -362,21 +370,12 @@ def format_all_projects(all_info):
     return "\n" + ("\n\n" + "-" * 24 + "\n\n").join(all_texts)
 
 
-def format_for_telegram(data_list):
-    """
-    将统计数据格式化为Telegram支持的HTML消息格式
-    仅使用<b>标签和unicode符号，保持美观易读
-
-    :param data_list: 包含name、tag、count的字典列表
-    :return: 格式化后的HTML字符串
-    """
+def format_kol_day_count(data_list):
     if not data_list:
         return "📊 暂无数据"
 
-    # 消息标题
-    message_parts = ["📋 <b>项目统计结果</b>\n\n"]
+    message_parts = ["📋 <b>昨日 X 话题热度</b>\n"]
 
-    # 按count降序排序（确保顺序正确）
     sorted_data = sorted(data_list, key=lambda x: (-x['count'], x['name']))
 
     for idx, item in enumerate(sorted_data, 1):
@@ -385,8 +384,6 @@ def format_for_telegram(data_list):
         count = item['count']
         tags = [html.escape(tag) for tag in item['tag']]
 
-        # 构建行内容：序号 + 名称 + 计数 + 标签
-        # 使用不同unicode符号区分不同计数级别
         if count >= 5:
             count_symbol = "🔥"  # 高频率
         elif count >= 3:
@@ -401,9 +398,33 @@ def format_for_telegram(data_list):
         line = f"{idx}. <b>{name}</b> {count_symbol} {count} {tags_str}"
         message_parts.append(line)
 
-    # 结尾添加分隔线和说明
-    message_parts.append("\n" + "=" * 20)
-    message_parts.append("\n💡 统计结果按出现次数排序")
+    message_parts.append("\n💡 统计结果按提及该项目推文数量排序")
 
     # 合并所有部分
     return "\n".join(message_parts)
+
+
+def format_kol_hour_message(data: list) -> str:
+    messages = []
+    messages.append(" <b>🔥 KOL观点(近1小时)</b>")
+    for item in data:
+        event = html.escape(item["event"])
+
+        authors = list(dict.fromkeys(item.get("authors", [])))
+        authors_text = " ".join(authors)
+
+        project_tags = defaultdict(set)
+        for proj in item.get("projects", []):
+            key = (proj["project_name"], proj["token_name"])
+            project_tags[key].update(proj.get("tags", []))
+
+        projects_info = [
+            f"🔗 <b>{name} ({token})</b> [{', '.join(sorted(tags))}]"
+            for (name, token), tags in project_tags.items()
+        ]
+        project_text = "\n".join(projects_info)
+
+        msg = f"📋 <b>{event}</b>\n🐦 {authors_text}\n{project_text}"
+        messages.append(msg)
+
+    return "\n\n".join(messages)
