@@ -46,7 +46,7 @@ class DataProcessor:
         self.updated_projects_list = set()
         self.inner_group = '-4879675579'
         self.outer_group = '-4892377641'
-        self.daily_group = '-4980813719'
+        self.daily_group = '-4871521904'#'-4980813719'
         self.daily_hyper_group = '-4942034777'
         self.test_inner_group = '-4834242214'
         self.test_outer_group = '-4878412167'
@@ -135,7 +135,7 @@ class DataProcessor:
             timezone='Asia/Shanghai',
             func=self._send_projects_trends,
             trigger='cron',
-            hour=0,
+            hour=9,
             minute=0,
             max_instances=1,
             name="定时发送项目热度"
