@@ -231,6 +231,9 @@ class DataProcessor:
             all_tweets=formated_tweets
         )
         events = result.get("events", [])
+        if len(events) == 0:
+            logger.info("近一小时暂无热点事件")
+            return
         all_projects = []
         for idx, e in enumerate(events):
             extracted_projects = [item.strip('$') for item in e.get("projects", [])]
