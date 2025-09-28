@@ -404,15 +404,18 @@ def format_kol_day_count(data_list):
     return "\n".join(message_parts)
 
 
-def format_kol_hour_message(data: list) -> str:
+def format_kol_hour_message(data: list, all_tweets) -> str:
     messages = []
     messages.append(" <b>🔥 KOL观点(近1小时)</b>")
     for item in data:
         event = html.escape(item["event"])
+        related_tweet_ids = item.get("tweet_ids", [])
+        # authors = list(dict.fromkeys(item.get("authors", [])))
+        authors = [ f'{all_tweets[int(idx) - 1].get("uid")} {all_tweets[int(idx) - 1].get("permanent_url")}' for idx in related_tweet_ids]
+        authors_text = "\n".join(authors)
 
-        authors = list(dict.fromkeys(item.get("authors", [])))
-        authors_text = " ".join(authors)
-
+        summary = item.get("kol_opinions", [])
+        summary_text = "\n".join(summary)
         project_tags = defaultdict(set)
         for proj in item.get("projects", []):
             key = (proj["project_name"], proj["token_name"])
@@ -424,7 +427,7 @@ def format_kol_hour_message(data: list) -> str:
         ]
         project_text = "\n".join(projects_info)
 
-        msg = f"📋 <b>{event}</b>\n🐦 {authors_text}\n{project_text}"
+        msg = f"📋 <b>{event}</b>\n 💭 {summary_text} \n 🐦 {authors_text}\n{project_text}"
         messages.append(msg)
 
     return "\n\n".join(messages)

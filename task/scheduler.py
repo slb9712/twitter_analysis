@@ -46,7 +46,7 @@ class DataProcessor:
         self.updated_projects_list = set()
         self.inner_group = '-4879675579'
         self.outer_group = '-4892377641'
-        self.daily_group = '-4871521904'#'-4980813719'
+        self.daily_group ='-4871521904'#'-4980813719' #
         self.daily_hyper_group = '-4942034777'
         self.test_inner_group = '-4834242214'
         self.test_outer_group = '-4878412167'
@@ -247,7 +247,8 @@ class DataProcessor:
                                      ensure_ascii=False)
         }
         self.mysql_manager.save_kol_summary_tweets(structured_data)
-        format_msg = format_kol_hour_message(events)
+        format_msg = format_kol_hour_message(events, all_tweets)
+        logger.info(format_msg)
         success = await send_message(self.daily_group, format_msg)
         if not success:
             logger.error("发送项目热度消息失败")
