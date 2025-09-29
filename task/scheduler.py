@@ -249,9 +249,9 @@ class DataProcessor:
         self.mysql_manager.save_kol_summary_tweets(structured_data)
         format_msg = format_kol_hour_message(events, all_tweets)
         logger.info(format_msg)
-        success = await send_message(self.daily_group, format_msg)
-        if not success:
-            logger.error("发送项目热度消息失败")
+        # success = await send_message(self.daily_group, format_msg)
+        # if not success:
+        #     logger.error("发送项目热度消息失败")
 
     async def _once_process_summary_tweets(self):
         sh_tz = ZoneInfo("Asia/Shanghai")

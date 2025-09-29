@@ -414,8 +414,8 @@ def format_kol_hour_message(data: list, all_tweets) -> str:
         authors = [ f'{all_tweets[int(idx) - 1].get("uid")} {all_tweets[int(idx) - 1].get("permanent_url")}' for idx in related_tweet_ids]
         authors_text = "\n".join(authors)
 
-        summary = item.get("kol_opinions", [])
-        summary_text = "\n".join(summary)
+        summary_text = item.get("summary", [])
+        # summary_text = "\n".join(summary)
         project_tags = defaultdict(set)
         for proj in item.get("projects", []):
             key = (proj["project_name"], proj["token_name"])
